@@ -1,0 +1,14 @@
+name = "filmline-video-worker"
+main = "index.js"
+compatibility_date = "2025-10-31"
+
+# Same pattern as weyland-ocr-worker: a capability built once, callable
+# from any other venture's Worker via a same-account Cloudflare Service
+# Binding — zero duplication, zero external API dependency. This worker's
+# own script generation is itself a Service Binding one level upstream, to
+# the already-live, already-verified JITAGI story-treatment endpoint on
+# mobley-venture-fleet-a (STORY_TREATMENT_CLUSTER: animetrope.com,
+# filmline.cc) — no new LLM credentials needed or duplicated here.
+[[services]]
+binding = "STORY_ENGINE"
+service = "mobley-venture-fleet-a"
