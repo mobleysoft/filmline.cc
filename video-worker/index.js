@@ -145,7 +145,7 @@ ${svg}
 <p class="note">Narration uses your browser's built-in Web Speech API (window.speechSynthesis) — nothing is sent to a server for this step, and no audio file is generated or stored anywhere. This page is an animated SVG storyboard reel (real motion via native SVG SMIL animation), not an encoded video file (.mp4/.webm) — that would need a video-encoding pipeline or hosted API this deployment doesn't have.</p>
 </div>
 <script>
-  var lines = ${JSON.stringify(narrationLines)};
+  var lines = ${JSON.stringify(narrationLines).replace(/</g, '\\u003c')};
   var btn = document.getElementById('narrate');
   btn.addEventListener('click', function () {
     if (!('speechSynthesis' in window)) { alert('This browser has no speechSynthesis support.'); return; }
@@ -161,6 +161,42 @@ ${svg}
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    // Structured callers already own the script. Do not run another model
+    // that would discard their manuscript-derived beats.
+    if (url.pathname === '/api/render' && request.method === 'POST') {
+      const reader = request.body?.getReader();
+      if (!reader) return jsonResponse({ error: 'JSON required' }, 400);
+      const chunks = []; let size = 0;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          size += value.length;
+          if (size > 32768) { await reader.cancel(); return jsonResponse({ error: 'Body too large' }, 413); }
+          chunks.push(value);
+        }
+      } finally { reader.releaseLock(); }
+      let body;
+      try {
+        const bytes = new Uint8Array(size); let offset = 0;
+        for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+        body = JSON.parse(new TextDecoder().decode(bytes));
+      } catch { return jsonResponse({ error: 'Invalid JSON' }, 400); }
+      const validText = (v, max) => typeof v === 'string' && v.trim().length > 0 && v.length <= max;
+      if (!validText(body?.title, 160) || !validText(body?.logline, 600) ||
+          !Array.isArray(body.scenes) || body.scenes.length < 1 || body.scenes.length > 24 ||
+          body.scenes.some((s, i) => s?.scene_number !== i + 1 || !validText(s.description, 700))) {
+        return jsonResponse({ error: 'A title, logline and 1-24 sequential scenes are required' }, 422);
+      }
+      const accent = /^#[0-9a-f]{6}$/i.test(body.accent || '') ? body.accent : DEFAULT_ACCENT;
+      return jsonResponse({ title: body.title, logline: body.logline, scenes: body.scenes,
+        video: { format: 'animated-svg-storyboard', scene_seconds: SCENE_SECONDS,
+          total_seconds: body.scenes.length * SCENE_SECONDS,
+          svg: buildStoryboardSvg(body.title, body.logline, body.scenes, accent) },
+        display_note: 'Cards show up to six lines; full descriptions remain in the scene data.',
+        script_source: { via: 'Validated caller-supplied scene beats; no additional inference' } });
+    }
 
     if ((url.pathname === "/health" || url.pathname === "/") && request.method === "GET") {
       return jsonResponse({
