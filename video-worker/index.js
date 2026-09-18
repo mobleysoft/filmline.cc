@@ -124,7 +124,12 @@ function buildStoryboardSvg(title, logline, scenes, accent) {
 }
 
 function buildHtmlPage(title, logline, scenes, svg) {
-  const narrationLines = [logline, ...scenes.map((s) => s?.description || "")].filter(Boolean);
+  // Prefer a real per-scene voiceover script when the caller has one (e.g.
+  // audiovizai.com's av-treatment produces a distinct voiceover line
+  // separate from the visual description, matching its own "synchronized
+  // audio-visual experience" promise) - fall back to description for
+  // callers like filmline.cc's story-treatment that only have one field.
+  const narrationLines = [logline, ...scenes.map((s) => s?.voiceover || s?.description || "")].filter(Boolean);
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <title>${escapeXml(title)} — filmline.cc storyboard reel</title>
@@ -184,10 +189,11 @@ export default {
         body = JSON.parse(new TextDecoder().decode(bytes));
       } catch { return jsonResponse({ error: 'Invalid JSON' }, 400); }
       const validText = (v, max) => typeof v === 'string' && v.trim().length > 0 && v.length <= max;
+      const validOptionalText = (v, max) => v === undefined || (typeof v === 'string' && v.length <= max);
       if (!validText(body?.title, 160) || !validText(body?.logline, 600) ||
           !Array.isArray(body.scenes) || body.scenes.length < 1 || body.scenes.length > 24 ||
-          body.scenes.some((s, i) => s?.scene_number !== i + 1 || !validText(s.description, 700))) {
-        return jsonResponse({ error: 'A title, logline and 1-24 sequential scenes are required' }, 422);
+          body.scenes.some((s, i) => s?.scene_number !== i + 1 || !validText(s.description, 700) || !validOptionalText(s.voiceover, 700))) {
+        return jsonResponse({ error: 'A title, logline and 1-24 sequential scenes (each needing a description, and optionally a real per-scene voiceover string) are required' }, 422);
       }
       const accent = /^#[0-9a-f]{6}$/i.test(body.accent || '') ? body.accent : DEFAULT_ACCENT;
       return jsonResponse({ title: body.title, logline: body.logline, scenes: body.scenes,
