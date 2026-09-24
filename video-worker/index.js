@@ -196,10 +196,13 @@ export default {
         return jsonResponse({ error: 'A title, logline and 1-24 sequential scenes (each needing a description, and optionally a real per-scene voiceover string) are required' }, 422);
       }
       const accent = /^#[0-9a-f]{6}$/i.test(body.accent || '') ? body.accent : DEFAULT_ACCENT;
+      const svg = buildStoryboardSvg(body.title, body.logline, body.scenes, accent);
       return jsonResponse({ title: body.title, logline: body.logline, scenes: body.scenes,
         video: { format: 'animated-svg-storyboard', scene_seconds: SCENE_SECONDS,
           total_seconds: body.scenes.length * SCENE_SECONDS,
-          svg: buildStoryboardSvg(body.title, body.logline, body.scenes, accent) },
+          svg },
+        page_html: buildHtmlPage(body.title, body.logline, body.scenes, svg),
+        narration: { engine: 'browser-web-speech-api', server_rendered_audio: false },
         display_note: 'Cards show up to six lines; full descriptions remain in the scene data.',
         script_source: { via: 'Validated caller-supplied scene beats; no additional inference' } });
     }
