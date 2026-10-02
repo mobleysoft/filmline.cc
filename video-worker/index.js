@@ -130,6 +130,14 @@ function buildHtmlPage(title, logline, scenes, svg) {
   // audio-visual experience" promise) - fall back to description for
   // callers like filmline.cc's story-treatment that only have one field.
   const narrationLines = [logline, ...scenes.map((s) => s?.voiceover || s?.description || "")].filter(Boolean);
+  // Keep complete caller text available when the visual card's six-line
+  // layout clips it. Escape each field: the transcript is HTML, not markup
+  // supplied by the caller. This also works without JavaScript or speech.
+  const transcript = scenes.map((scene, index) => `<li>
+<h3>Scene ${index + 1}</h3>
+<p class="scene-text">${escapeXml(scene.description || "")}</p>
+${scene.voiceover ? `<p class="scene-text"><strong>Voiceover:</strong> ${escapeXml(scene.voiceover)}</p>` : ""}
+</li>`).join("\n");
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <title>${escapeXml(title)} — filmline.cc storyboard reel</title>
@@ -140,17 +148,35 @@ function buildHtmlPage(title, logline, scenes, svg) {
   svg{width:100%;height:auto;border-radius:8px;display:block;}
   button{margin-top:16px;padding:10px 18px;background:#d99a3b;color:#10151c;border:0;border-radius:6px;font-weight:700;cursor:pointer;font-size:14px;}
   button:disabled{opacity:0.5;cursor:default;}
+  .scene-text{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6;}
   .note{margin-top:14px;font-size:13px;color:#8a94a6;line-height:1.5;}
 </style></head>
 <body><div class="wrap">
 <h1 style="margin-bottom:4px;">${escapeXml(title)}</h1>
 <p style="color:#c9d2de;">${escapeXml(logline)}</p>
 ${svg}
+<button id="replay" type="button">Replay storyboard</button>
 <button id="narrate">Narrate (browser text-to-speech)</button>
 <p class="note">Narration uses your browser's built-in Web Speech API (window.speechSynthesis) — nothing is sent to a server for this step, and no audio file is generated or stored anywhere. This page is an animated SVG storyboard reel (real motion via native SVG SMIL animation), not an encoded video file (.mp4/.webm) — that would need a video-encoding pipeline or hosted API this deployment doesn't have.</p>
+<section aria-labelledby="transcript-title">
+<h2 id="transcript-title">Full scene transcript</h2>
+<p class="note">The animated cards show up to six lines. Complete descriptions and any separate voiceover are preserved below.</p>
+<ol>${transcript}</ol>
+</section>
 </div>
 <script>
   var lines = ${JSON.stringify(narrationLines).replace(/</g, '\\u003c')};
+  var replay = document.getElementById('replay');
+  var storyboard = document.querySelector('svg');
+  // Reset the existing SMIL time container, including all scene offsets.
+  // Narration is independent of the fixed-duration visual reel.
+  replay.disabled = !storyboard || typeof storyboard.setCurrentTime !== 'function';
+  replay.addEventListener('click', function () {
+    if (replay.disabled) return;
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    storyboard.setCurrentTime(0);
+    storyboard.unpauseAnimations();
+  });
   var btn = document.getElementById('narrate');
   btn.addEventListener('click', function () {
     if (!('speechSynthesis' in window)) { alert('This browser has no speechSynthesis support.'); return; }
